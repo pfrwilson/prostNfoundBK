@@ -99,6 +99,7 @@ def make_table(ubc=True, queens=True, rm_ca_from_ben=True):
             if filename.endswith(".json")
         ]
         df = extract_info_json(ubc_info, df)
+        df.inv = df.inv.apply(lambda x: x * 100)
     if queens:
         queens_info = [
             DATA_CORES_QUEENS + filename
@@ -448,6 +449,12 @@ def make_corewise_bk_dataloaders(
     return train_dl, val_dl, test_dl
 
 
+def make_analytical(x):
+    from scipy.signal import hilbert
+
+    return np.abs(hilbert(x)) ** 0.3
+
+
 class BKCorewiseDataset(Dataset):
     def __init__(
         self,
@@ -480,17 +487,17 @@ class BKCorewiseDataset(Dataset):
         rf_file = np.load(file_arr[0])
 
         if self.style == "last_frame":
-            bmode = self.make_analytical(rf_file[:, :, -1])
+            bmode = make_analytical(rf_file[:, :, -1])
         elif self.style == "avg_last_100":
-            bmode = self.make_analytical(rf_file[:, :, -100:].mean(axis=-1))
+            bmode = make_analytical(rf_file[:, :, -100:].mean(axis=-1))
         elif self.style == "avg_all":
-            bmode = self.make_analytical(rf_file.mean(axis=-1))
+            bmode = make_analytical(rf_file.mean(axis=-1))
         elif self.style == "random":
             frame_idx = np.random.randint(100, rf_file.shape[-1])
-            bmode = self.make_analytical(rf_file[:, :, frame_idx])
+            bmode = make_analytical(rf_file[:, :, frame_idx])
         elif self.style == "random_avg":
             frame_idx = np.random.randint(50, 150)
-            bmode = self.make_analytical(
+            bmode = make_analytical(
                 rf_file[:, :, frame_idx : frame_idx + 5].mean(axis=-1)
             )
         else:
@@ -498,8 +505,8 @@ class BKCorewiseDataset(Dataset):
             bmode = self.make_analytical(rf_file.mean(axis=-1))
 
         bmode = resize(bmode, (self.im_sz, self.im_sz))
-        roi_mask = resize(roi_mask, (self.im_sz, self.im_sz))
-        prostate_mask = resize(prostate_mask, (self.im_sz, self.im_sz))
+        roi_mask = resize(roi_mask, (self.im_sz//4, self.im_sz//4))
+        prostate_mask = resize(prostate_mask, (self.im_sz//4, self.im_sz//4))
 
         if self.transform is not None:
             bmode = torch.from_numpy(bmode).unsqueeze(0).float()
@@ -517,7 +524,8 @@ class BKCorewiseDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-    def collect_files(self, df):
+    @staticmethod
+    def collect_files(df):
         file_tuples = []
         for filetemplate in list(df.filetemplate):
             try:
@@ -589,10 +597,7 @@ class BKCorewiseDataset(Dataset):
 
         return file_tuples
 
-    def make_analytical(self, x):
-        from scipy.signal import hilbert
-
-        return np.abs(hilbert(x)) ** 0.3
+    
 
 
 class BKPatchDataset(Dataset):
